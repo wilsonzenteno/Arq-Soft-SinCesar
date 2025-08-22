@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Conferencias - Eventos Abraham</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-microphone"></i>
+                    <span>Eventos Abraham</span>
+                </div>
+                <div class="nav-buttons">
+                    <button class="btn btn-outline" id="theme-toggle">
+                        <i class="fas fa-moon"></i> Modo Oscuro
+                    </button>
+                    <button class="btn btn-primary" id="add-conference">
+                        <i class="fas fa-plus"></i> Nueva Conferencia
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="search-container">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="search-input" placeholder="Buscar conferencias...">
+            </div>
+            <div class="filter-container">
+                <select class="filter-select" id="category-filter">
+                    <option value="">Todas las categorías</option>
+                    <option value="tecnologia">Tecnología</option>
+                    <option value="negocios">Negocios</option>
+                    <option value="ciencia">Ciencia</option>
+                    <option value="educacion">Educación</option>
+                </select>
+                <select class="filter-select" id="date-filter">
+                    <option value="">Todas las fechas</option>
+                    <option value="today">Hoy</option>
+                    <option value="week">Esta semana</option>
+                    <option value="month">Este mes</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="conference-grid" id="conferences-list">
+            <!-- Las conferencias se cargarán aquí dinámicamente -->
+        </div>
+    </div>
+
+    <div class="modal" id="conference-modal">
+        <div class="modal-content">
+            <div class="modal-close" id="modal-close">
+                <i class="fas fa-times"></i>
+            </div>
+            <div id="modal-content">
+                <!-- El contenido de la modal se cargará aquí -->
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification">
+        <i class="fas fa-check-circle"></i>
+        <span id="notification-text"></span>
+    </div>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>Eventos Abraham</h3>
+                    <p>Gestión profesional de conferencias, cursos y webinars en toda Bolivia.</p>
+                </div>
+                <div class="footer-section">
+                    <h3>Contacto</h3>
+                    <p><i class="fas fa-envelope"></i> info@eventosabraham.com</p>
+                    <p><i class="fas fa-phone"></i> +591 76543210</p>
+                </div>
+                <div class="footer-section">
+                    <h3>Síguenos</h3>
+                    <p>
+                        <i class="fab fa-facebook"></i> Facebook &nbsp;
+                        <i class="fab fa-twitter"></i> Twitter &nbsp;
+                        <i class="fab fa-linkedin"></i> LinkedIn
+                    </p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 Eventos Abraham - Todos los derechos reservados</p>
+            </div>
+        </div>
+    </footer>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
