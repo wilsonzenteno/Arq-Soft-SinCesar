@@ -1,0 +1,123 @@
+<?php
+declare(strict_types=1);
+
+error_reporting(E_ALL);
+ini_set('display_errors', '1');
+
+$config = require __DIR__ . '/../config.php';
+header('Access-Control-Allow-Origin: ' . ($config['APP_ORIGIN'] ?? '*'));
+header('Access-Control-Allow-Headers: Authorization, Content-Type');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') { exit; }
+
+spl_autoload_register(function ($class) {
+  $prefix = 'App\\'; $base_dir = __DIR__ . '/../app/'; $len = strlen($prefix);
+  if (strncmp($prefix, $class, $len) !== 0) return;
+  $relative_class = substr($class, $len);
+  $file = $base_dir . str_replace('\\', '/', $relative_class) . '.php';
+  if (file_exists($file)) require $file;
+});
+
+use App\Core\Router;
+use App\Controllers\PagesController;
+use App\Controllers\AttendeeController;
+use App\Controllers\SpeakerController;
+use App\Controllers\StaffController;
+use App\Controllers\SlidesController;
+use App\Controllers\AuthController;
+
+$router = new Router();
+
+/** VISTAS */
+$router->get('/',         [PagesController::class, 'home']);
+$router->get('/speaker',  [PagesController::class, 'speaker']);
+$router->get('/attendee', [PagesController::class, 'attendee']);
+$router->get('/staff',    [PagesController::class, 'staff']);
+
+/** VISTAS ADMIN NUEVAS */
+$router->get('/staff/conferences',   [PagesController::class, 'staffConfs']);
+$router->get('/staff/rooms',         [PagesController::class, 'staffRooms']);
+$router->get('/staff/talks',         [PagesController::class, 'staffTalks']);
+$router->get('/staff/announcements', [PagesController::class, 'staffAnns']);
+
+/** AUTH */
+$router->get('/auth.role',     [AuthController::class, 'role']);
+$router->post('/auth.session', [AuthController::class, 'session']);
+$router->post('/auth.logout',  [AuthController::class, 'logout']);
+
+// ===== Páginas públicas de detalle =====
+$router->get('/public/talk',    [PagesController::class, 'publicTalk']);
+$router->get('/public/course',  [PagesController::class, 'publicCourse']);
+$router->get('/public/webinar', [PagesController::class, 'publicWebinar']);
+
+/** API Asistentes */
+$router->get('/attendee.conferences.list', [AttendeeController::class, 'listConferences']);
+$router->get('/attendee.talks.list',       [AttendeeController::class, 'listTalksByConference']);
+$router->post('/attendee.register',        [AttendeeController::class, 'registerToConference']);
+$router->post('/attendee.vote',            [AttendeeController::class, 'voteTalk']);
+$router->get('/attendee.registrations.mine',[AttendeeController::class, 'myRegistrations']);
+$router->get('/attendee.votes.mine',        [AttendeeController::class, 'myVotes']);
+$router->get('/attendee.conf.likes.mine', [AttendeeController::class, 'myConferenceLikes']);
+$router->post('/attendee.conf.like',      [AttendeeController::class, 'likeConference']);
+$router->get('/attendee.conf.eval.get',   [AttendeeController::class, 'getConferenceEvaluation']);
+$router->post('/attendee.conf.eval.save', [AttendeeController::class, 'saveConferenceEvaluation']);
+
+// ===== Listas públicas “Explorar todo” =====
+$router->get('/attendee.talks.all',    [AttendeeController::class, 'listAllTalks']);
+$router->get('/attendee.courses.all',  [AttendeeController::class, 'listAllCourses']);
+$router->get('/attendee.webinars.all', [AttendeeController::class, 'listAllWebinars']);
+
+// SPEAKER – listados
+$router->get('/speaker.conferences.mine', [\App\Controllers\SpeakerController::class, 'myConferences']);
+$router->get('/speaker.webinars.mine',    [\App\Controllers\SpeakerController::class, 'myWebinars']);
+$router->get('/speaker.courses.mine',     [\App\Controllers\SpeakerController::class, 'myCourses']);
+
+// SPEAKER – conferencia
+$router->post('/speaker.conference.create', [\App\Controllers\SpeakerController::class, 'createConferenceBySpeaker']);
+$router->post('/speaker.conference.update', [\App\Controllers\SpeakerController::class, 'updateConferenceBySpeaker']);
+$router->post('/speaker.conference.delete', [\App\Controllers\SpeakerController::class, 'deleteConferenceBySpeaker']);
+
+// SPEAKER – charla
+$router->post('/speaker.talk.create',  [\App\Controllers\SpeakerController::class, 'createOwnTalk']);
+$router->post('/speaker.talk.update',  [\App\Controllers\SpeakerController::class, 'updateOwnTalk']);
+$router->post('/speaker.talk.delete',  [\App\Controllers\SpeakerController::class, 'deleteOwnTalk']);
+
+// SPEAKER – webinar
+$router->post('/speaker.webinar.create', [\App\Controllers\SpeakerController::class, 'myWebinarsCreate']);
+$router->post('/speaker.webinar.update', [\App\Controllers\SpeakerController::class, 'myWebinarsUpdate']);
+$router->post('/speaker.webinar.delete', [\App\Controllers\SpeakerController::class, 'myWebinarsDelete']);
+
+// SPEAKER – course
+$router->post('/speaker.course.create', [\App\Controllers\SpeakerController::class, 'myCoursesCreate']);
+$router->post('/speaker.course.update', [\App\Controllers\SpeakerController::class, 'myCoursesUpdate']);
+$router->post('/speaker.course.delete', [\App\Controllers\SpeakerController::class, 'myCoursesDelete']);
+
+$router->get('/speaker.talks.mine',     [SpeakerController::class, 'myTalks']);
+$router->post('/speaker.slides.upload', [SpeakerController::class, 'uploadSlides']);
+
+/** API Staff (create) */
+$router->post('/staff.conference.create',   [StaffController::class, 'createConference']);
+$router->post('/staff.room.create',         [StaffController::class, 'createRoom']);
+$router->post('/staff.talk.create',         [StaffController::class, 'createTalk']);
+$router->post('/staff.announcement.create', [StaffController::class, 'createAnnouncement']);
+
+/** API Staff (read helpers) */
+$router->get('/staff.rooms.by_conf',        [StaffController::class, 'roomsByConference']);
+$router->get('/staff.talks.list',           [StaffController::class, 'listTalks']);
+$router->get('/staff.users.search',         [StaffController::class, 'searchUsersByEmail']);
+$router->get('/staff.announcements.list',   [StaffController::class, 'listAnnouncements']);
+
+/** API Staff (update/delete) */
+$router->post('/staff.conference.update',   [StaffController::class, 'updateConference']);
+$router->post('/staff.conference.delete',   [StaffController::class, 'deleteConference']);
+$router->post('/staff.room.update',         [StaffController::class, 'updateRoom']);
+$router->post('/staff.room.delete',         [StaffController::class, 'deleteRoom']);
+$router->post('/staff.talk.update',         [StaffController::class, 'updateTalk']);
+$router->post('/staff.talk.delete',         [StaffController::class, 'deleteTalk']);
+$router->post('/staff.announcement.update', [StaffController::class, 'updateAnnouncement']);
+$router->post('/staff.announcement.delete', [StaffController::class, 'deleteAnnouncement']);
+
+/** Slides */
+$router->get('/slides.download',            [SlidesController::class, 'download']);
+
+$router->dispatch();
