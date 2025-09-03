@@ -2,63 +2,71 @@
 $title = "Asistentes — ABRAHAM";
 $extra_js = ["/js/attendee.js"];
 ?>
-<section class="card">
-  <h2>Conferencias</h2>
-  <div id="confList" class="list"></div>
-</section>
-
-<section class="card" id="talksSection">
-  <div class="row" style="justify-content:space-between;align-items:center">
-    <h2>Programa</h2>
-    <label class="row" style="gap:8px">Conferencia
-      <select id="confSelect"></select>
-    </label>
-  </div>
-
-  <div class="row" style="gap:12px;align-items:center;margin-bottom:10px">
-    <button id="btnConfLike" class="btn outline" type="button">♥ Me gusta</button>
-    <span class="muted" id="likeHint">El voto será como dar likes en una post; la evaluación mide si la conferencia te sirvió, cubrió expectativas y qué optimizar.</span>
-  </div>
-
-  <details class="item" id="evalBox">
-    <summary>Evaluar conferencia</summary>
-    <form id="evalForm" class="row" style="gap:12px;align-items:flex-end">
-      <label>¿Te resultó útil?
-        <select id="q1"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
-      </label>
-      <label>¿Cubrió tus expectativas?
-        <select id="q2"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
-      </label>
-      <label>Calidad del contenido
-        <select id="q3"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
-      </label>
-      <label>Logística/instalaciones
-        <select id="q4"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
-      </label>
-      <label style="flex:1">Comentarios
-        <input id="comments" placeholder="¿Algo a mejorar?" />
-      </label>
-      <button class="btn">Guardar evaluación</button>
-    </form>
-  </details>
-
-  <div id="talkList" class="list"></div>
-</section>
-
-<section class="card">
-  <h2>Explorar todo</h2>
-  <div class="grid">
-    <div>
-      <h3>Charlas</h3>
-      <div id="allTalks" class="list"></div>
+<div class="drawer-layout">
+  <aside id="drawer" class="drawer">
+    <div class="drawer-header">
+      <div class="profileSmall" id="attProfile">
+        <div class="muted">Conectado</div>
+        <div><strong>—</strong></div>
+      </div>
     </div>
-    <div>
-      <h3>Cursos</h3>
-      <div id="allCourses" class="list"></div>
+    <nav class="drawer-nav">
+      <button class="drawer-link active" data-view="explore">Explorar</button>
+      <button class="drawer-link" data-view="mine">Mis inscripciones</button>
+    </nav>
+  </aside>
+
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+  <section class="drawer-content">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+      <button id="menuToggle" class="btn outline" type="button">☰ Menú</button>
+      <h2 id="viewTitle" style="margin:8px 0">Explorar</h2>
     </div>
-    <div>
-      <h3>Webinars</h3>
-      <div id="allWebinars" class="list"></div>
+
+    <!-- ======= EXPLORAR ======= -->
+    <div id="view-explore" class="view active">
+      <section class="card">
+        <h3>Charlas</h3>
+        <p class="muted">Explora todas las charlas del sistema.</p>
+        <div id="talkCards" class="cards"></div>
+      </section>
+
+      <section class="card">
+        <h3>Cursos</h3>
+        <p class="muted">Cursos disponibles.</p>
+        <div id="courseCards" class="cards"></div>
+      </section>
+
+      <section class="card">
+        <h3>Webinars</h3>
+        <p class="muted">Webinars disponibles.</p>
+        <div id="webinarCards" class="cards"></div>
+      </section>
     </div>
-  </div>
-</section>
+
+    <!-- ======= MIS INSCRIPCIONES ======= -->
+    <div id="view-mine" class="view">
+      <section class="card">
+        <h3>Mis conferencias</h3>
+        <div id="myConfs" class="cards"></div>
+      </section>
+
+      <section class="card">
+        <h3>Mis charlas</h3>
+        <div id="myTalks" class="cards"></div>
+      </section>
+
+      <section class="card">
+        <h3>Mis cursos</h3>
+        <div id="myCourses" class="cards"></div>
+      </section>
+
+      <section class="card">
+        <h3>Mis webinars</h3>
+        <div id="myWebinars" class="cards"></div>
+      </section>
+    </div>
+
+  </section>
+</div>

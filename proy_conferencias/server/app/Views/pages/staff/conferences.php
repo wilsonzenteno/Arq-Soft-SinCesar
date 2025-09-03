@@ -4,6 +4,7 @@
   <a class="btn outline" href="/index.php?route=/staff/rooms">Salas</a>
   <a class="btn outline" href="/index.php?route=/staff/talks">Charlas</a>
   <a class="btn outline" href="/index.php?route=/staff/announcements">Anuncios</a>
+  <a class="btn outline" href="/index.php?route=/staff/users">Usuarios</a>
 </nav>
 
 <div class="grid">

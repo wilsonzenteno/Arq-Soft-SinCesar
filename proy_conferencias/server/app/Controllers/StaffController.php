@@ -69,10 +69,17 @@ class StaffController {
     $confId = isset($_GET['conference_id']) && $_GET['conference_id']!=='' ? intval($_GET['conference_id']) : null;
     Http::json(Announcement::listAdmin($this->sb, $confId));
   }
+
+  /** Usuarios: búsqueda por email (con rol actual) */
   public function searchUsersByEmail(): void {
     if (!$this->requireStaff()) { Http::json(['error'=>'No autorizado'], 403); return; }
     $email = trim((string)($_GET['email'] ?? ''));
-    Http::json($this->sb->authAdminSearchUsers($email));
+    $users = $this->sb->authAdminSearchUsers($email);
+    // Completar con rol actual desde profiles
+    foreach ($users as &$u) {
+      $u['role'] = $u['id'] ? ($this->sb->getUserRole($u['id']) ?? null) : null;
+    }
+    Http::json($users);
   }
 
   /** UPDATE */
@@ -112,6 +119,22 @@ class StaffController {
       'conference_id'=> isset($p['conference_id']) && $p['conference_id']!=='' ? intval($p['conference_id']) : null
     ]);
     $ok ? Http::json(['ok'=>true]) : Http::json(['error'=>'Fail'], 400);
+  }
+
+  /** Usuarios: actualizar rol (upsert en profiles) */
+  public function updateUserRole(): void {
+    if (!$this->requireStaff()) { Http::json(['error'=>'No autorizado'], 403); return; }
+    $p = Http::jsonInput();
+    $uid  = (string)($p['user_id'] ?? '');
+    $role = (string)($p['role'] ?? '');
+    $allowed = ['admin','staff','speaker','attendee'];
+    if ($uid === '' || $role === '' || !in_array($role, $allowed, true)) {
+      Http::json(['error'=>'Parámetros inválidos'], 400); return;
+    }
+    // Upsert en profiles para asegurar que exista
+    $res = $this->sb->restUpsert('profiles', ['id'=>$uid, 'role'=>$role], 'id', false);
+    if (($res['status'] ?? 500) >= 300) { Http::json(['error'=>'No se pudo actualizar el rol'], 400); return; }
+    Http::json(['ok'=>true]);
   }
 
   /** DELETE */

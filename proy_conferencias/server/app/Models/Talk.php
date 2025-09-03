@@ -23,9 +23,31 @@ class Talk {
     return ($res['status'] ?? 500) < 300;
   }
   public static function listByConferenceAdmin(Supabase $sb, int $confId): array {
-    // Service Role para listados de admin
     $res = $sb->restSelect('talks', "conference_id=eq.$confId&select=id,title,starts_at,ends_at,room_id,speaker_id&order=starts_at.asc", false);
     return json_decode($res['body'] ?? "[]", true) ?? [];
   }
-  
+
+  /** Autorización para ver slides de una charla */
+  public static function userRegisteredForTalkConference(Supabase $sb, int $talkId, string $uid): bool {
+    // 1) Datos mínimos de la charla
+    $r1 = $sb->restSelect('talks', "id=eq.$talkId&select=conference_id,speaker_id", false);
+    $arr = json_decode($r1['body'] ?? "[]", true) ?? [];
+    $t = $arr[0] ?? null;
+    if (!$t) return false;
+
+    // Admin/Staff siempre permitidos
+    $role = $sb->getUserRole($uid);
+    if (in_array($role, ['admin','staff'], true)) return true;
+
+    // El speaker de la charla también
+    if (!empty($t['speaker_id']) && $t['speaker_id'] === $uid) return true;
+
+    // 2) ¿El usuario está inscrito a la conferencia?
+    $cid = $t['conference_id'] ?? null;
+    if (!$cid) return false;
+
+    $r2 = $sb->restSelect('registrations', "conference_id=eq.$cid&attendee_id=eq.$uid&select=attendee_id", false);
+    $a2 = json_decode($r2['body'] ?? "[]", true) ?? [];
+    return !empty($a2);
+  }
 }

@@ -10,5 +10,6 @@ $extra_js = [];
     <a class="btn" href="/index.php?route=/staff/rooms">Salas</a>
     <a class="btn" href="/index.php?route=/staff/talks">Charlas</a>
     <a class="btn" href="/index.php?route=/staff/announcements">Anuncios</a>
+    <a class="btn" href="/index.php?route=/staff/users">Usuarios</a>
   </div>
 </section>

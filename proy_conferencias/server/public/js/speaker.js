@@ -3,18 +3,28 @@ const esc = s => String(s??'').replace(/[&<>"'`=\/]/g, c => ({'&':'&amp;','<':'&
 const toLocal = dt => { if(!dt) return ''; const d=new Date(dt); if(Number.isNaN(+d)) return ''; const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 const asArray = x => Array.isArray(x) ? x : (x && Array.isArray(x.data) ? x.data : []);
 
+function getSupa(){
+  if (!window.supabase || !window.ENV?.SUPABASE_URL || !window.ENV?.SUPABASE_ANON) return null;
+  if (!window.__SUPA) {
+    window.__SUPA = window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON);
+  }
+  return window.__SUPA;
+}
+
 async function getJwt(){
   let jwt = localStorage.getItem('jwt');
   if (jwt) return jwt;
-  if (window.supabase && window.ENV?.SUPABASE_URL && window.ENV?.SUPABASE_ANON) {
-    const supa = window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON);
+  const supa = getSupa();
+  if (supa) {
     const { data } = await supa.auth.getSession();
     jwt = data?.session?.access_token || null;
     if (jwt) localStorage.setItem('jwt', jwt);
   }
   return jwt;
 }
+
 async function api(route, method="GET", body=null){
+  const path = route.startsWith('/') ? route : ('/' + route);
   const headers = {};
   const jwt = await getJwt();
   if (jwt) headers['Authorization'] = 'Bearer ' + jwt;
@@ -23,17 +33,17 @@ async function api(route, method="GET", body=null){
   if (body && !(body instanceof FormData)) { headers['Content-Type'] = 'application/json'; fetchBody = JSON.stringify(body); }
   else if (body instanceof FormData) { fetchBody = body; }
 
-  const res = await fetch(`/index.php?route=${route}`, { method, headers, body: fetchBody, credentials: 'include' });
+  const res = await fetch(`/index.php?route=${encodeURIComponent(path)}`, { method, headers, body: fetchBody, credentials: 'include' });
   const txt = await res.text();
   let data = null; try { data = txt ? JSON.parse(txt) : null; } catch { data = txt; }
-  if (!res.ok) throw new Error((data && data.error) ? data.error : (res.statusText || 'Request failed'));
+  if (!res.ok) throw new Error((data && data.error) ? data.error : (res.statusText || 'Not Found'));
   return data;
 }
 
 /* ---------- CARGAS ---------- */
 async function loadConferences(){
   let arr = [];
-  try { arr = asArray(await api('speaker.conferences.mine','GET')); } catch(e){ console.warn('conferences.mine:', e.message); }
+  try { arr = asArray(await api('/speaker.conferences.mine','GET')); } catch(e){ console.warn('conferences.mine:', e.message); }
   $('#f_conf_select').innerHTML = arr.map(c=>{
     const id = c.id; const title = c.title || c.name || '(sin título)'; const loc = c.location || c.city || '';
     return `<option value="${id}">${esc(title)}${loc ? ' • ' + esc(loc) : ''}</option>`;
@@ -74,7 +84,7 @@ async function loadConferences(){
     b.addEventListener('click', async ev=>{
       const id = ev.target.closest('.item').dataset.id;
       if (!confirm('¿Eliminar esta conferencia?')) return;
-      await api('speaker.conference.delete','POST',{ id });
+      await api('/speaker.conference.delete','POST',{ id });
       await loadConferences();
     });
   });
@@ -82,7 +92,7 @@ async function loadConferences(){
 
 async function loadTalks(){
   let arr = [];
-  try { arr = asArray(await api('speaker.talks.mine','GET')); } catch(e){ console.warn('talks.mine:', e.message); }
+  try { arr = asArray(await api('/speaker.talks.mine','GET')); } catch(e){ console.warn('talks.mine:', e.message); }
   $('#list_talks').innerHTML = arr.map(t => {
     const stIso = t.start_time || t.starts_at || '';
     const enIso = t.end_time   || t.ends_at   || '';
@@ -120,14 +130,14 @@ async function loadTalks(){
     b.addEventListener('click', async ev=>{
       const id = ev.target.closest('.item').dataset.id;
       if (!confirm('¿Eliminar esta charla?')) return;
-      await api('speaker.talk.delete','POST',{ id });
+      await api('/speaker.talk.delete','POST',{ id });
       await loadTalks();
     });
   });
 }
 
 async function loadCourses(){
-  let arr = []; try { arr = asArray(await api('speaker.courses.mine','GET')); } catch(e){ console.warn('courses.mine:', e.message); }
+  let arr = []; try { arr = asArray(await api('/speaker.courses.mine','GET')); } catch(e){ console.warn('courses.mine:', e.message); }
   $('#list_courses').innerHTML = arr.map(w => `
     <div class="item" data-id="${w.id}" data-stiso="${esc(w.starts_at||'')}" data-eniso="${esc(w.ends_at||'')}" data-mod="${esc(w.modality||'presencial')}" data-venue="${esc(w.venue||'')}" data-stream="${esc(w.stream_url||'')}">
       <div class="row" style="justify-content:space-between;align-items:flex-start">
@@ -161,14 +171,14 @@ async function loadCourses(){
     b.addEventListener('click', async ev=>{
       const id = parseInt(ev.target.closest('.item').dataset.id,10);
       if (!confirm('¿Eliminar este curso?')) return;
-      await api('speaker.course.delete','POST',{ id });
+      await api('/speaker.course.delete','POST',{ id });
       await loadCourses();
     });
   });
 }
 
 async function loadWebinars(){
-  let arr = []; try { arr = asArray(await api('speaker.webinars.mine','GET')); } catch(e){ console.warn('webinars.mine:', e.message); }
+  let arr = []; try { arr = asArray(await api('/speaker.webinars.mine','GET')); } catch(e){ console.warn('webinars.mine:', e.message); }
   $('#list_webinars').innerHTML = arr.map(w => `
     <div class="item" data-id="${w.id}" data-stiso="${esc(w.starts_at||'')}" data-eniso="${esc(w.ends_at||'')}" data-mod="${esc(w.modality||'virtual')}" data-venue="${esc(w.venue||'')}" data-stream="${esc(w.stream_url||'')}">
       <div class="row" style="justify-content:space-between;align-items:flex-start">
@@ -201,7 +211,7 @@ async function loadWebinars(){
     b.addEventListener('click', async ev=>{
       const id = parseInt(ev.target.closest('.item').dataset.id,10);
       if (!confirm('¿Eliminar este webinar?')) return;
-      await api('speaker.webinar.delete','POST',{ id });
+      await api('/speaker.webinar.delete','POST',{ id });
       await loadWebinars();
     });
   });
@@ -228,13 +238,7 @@ async function uploadPdf(talkId, file){
   const form = new FormData();
   form.append('talk_id', talkId);
   form.append('file', file);
-  const jwt = await getJwt();
-  const res = await fetch('/index.php?route=/speaker.slides.upload', {
-    method: 'POST',
-    headers: jwt ? { 'Authorization': 'Bearer ' + jwt } : {},
-    body: form, credentials: 'include'
-  });
-  if (!res.ok) throw new Error((await res.text()) || 'Upload fail');
+  await api('/speaker.slides.upload','POST', form);
 }
 
 /* ---------- submit ---------- */
@@ -243,36 +247,52 @@ async function submitUnified(e){
   const id   = $('#item_id').value;
   const type = $('#item_type').value;
 
+  // helper para +1h por defecto
+  const add1hIfMissing = (isoStart, isoEnd) => {
+    if (isoEnd) return isoEnd;
+    if (!isoStart) return null;
+    const t = new Date(isoStart).getTime();
+    if (Number.isNaN(t)) return null;
+    return new Date(t + 3600*1000).toISOString();
+  };
+
   if (type === 'conference') {
+    const starts = $('#f_start').value ? new Date($('#f_start').value).toISOString()
+                 : ($('#f_date').value ? new Date($('#f_date').value).toISOString() : null);
+    const ends   = add1hIfMissing(starts, $('#f_end').value ? new Date($('#f_end').value).toISOString() : null);
+
     const payload = {
       title: $('#f_title').value.trim(),
       description: $('#f_desc').value.trim() || null,
       location: $('#f_city').value.trim() || null,
-      date: $('#f_date').value ? new Date($('#f_date').value).toISOString() : ($('#f_start').value ? new Date($('#f_start').value).toISOString() : null),
+      date: $('#f_date').value ? new Date($('#f_date').value).toISOString() : null,
       name:  $('#f_title').value.trim(),
       city:  $('#f_city').value.trim() || null,
-      starts_at: $('#f_start').value ? new Date($('#f_start').value).toISOString() : ($('#f_date').value ? new Date($('#f_date').value).toISOString() : null),
-      ends_at:   $('#f_end').value ? new Date($('#f_end').value).toISOString()   : null
+      starts_at: starts,
+      ends_at:   ends
     };
-    if (id) await api('speaker.conference.update','POST',{ id, ...payload });
-    else    await api('speaker.conference.create','POST', payload);
+    if (!payload.name || !payload.city || !payload.starts_at) { alert('Nombre, ciudad e inicio son obligatorios'); return; }
+
+    if (id) await api('/speaker.conference.update','POST',{ id, ...payload });
+    else    await api('/speaker.conference.create','POST', payload);
     await loadConferences(); resetForm(); return;
   }
 
   if (type === 'talk') {
+    const starts = $('#f_start').value ? new Date($('#f_start').value).toISOString() : null;
+    const ends   = add1hIfMissing(starts, $('#f_end').value ? new Date($('#f_end').value).toISOString() : null);
+
     const payload = {
       conference_id: $('#f_conf_select').value,
       title: $('#f_title').value.trim(),
-      description: $('#f_desc').value.trim() || null,
-      start_time: $('#f_start').value ? new Date($('#f_start').value).toISOString() : null,
-      end_time:   $('#f_end').value ? new Date($('#f_end').value).toISOString()   : null,
-      starts_at:  $('#f_start').value ? new Date($('#f_start').value).toISOString() : null,
-      ends_at:    $('#f_end').value ? new Date($('#f_end').value).toISOString()   : null
+      starts_at:  starts,
+      ends_at:    ends
     };
+    if (!payload.conference_id || !payload.title || !payload.starts_at) { alert('Conferencia, título e inicio son obligatorios'); return; }
 
     let talkId = id || null;
-    if (talkId) { await api('speaker.talk.update','POST',{ id: talkId, ...payload }); }
-    else { const resp = await api('speaker.talk.create','POST', payload); talkId = resp?.id || null; }
+    if (talkId) { await api('/speaker.talk.update','POST',{ id: talkId, ...payload }); }
+    else { const resp = await api('/speaker.talk.create','POST', payload); talkId = resp?.id || null; }
 
     const file = $('#f_pdf')?.files?.[0];
     if (file && talkId) await uploadPdf(talkId, file);
@@ -290,8 +310,8 @@ async function submitUnified(e){
       starts_at: $('#f_start').value ? new Date($('#f_start').value).toISOString() : null,
       ends_at:   $('#f_end').value ? new Date($('#f_end').value).toISOString()   : null
     };
-    if (id) await api('speaker.course.update','POST',{ id: parseInt(id,10), ...payload });
-    else    await api('speaker.course.create','POST', payload);
+    if (id) await api('/speaker.course.update','POST',{ id: parseInt(id,10), ...payload });
+    else    await api('/speaker.course.create','POST', payload);
     await loadCourses(); resetForm(); return;
   }
 
@@ -305,8 +325,8 @@ async function submitUnified(e){
       starts_at: $('#f_start').value ? new Date($('#f_start').value).toISOString() : null,
       ends_at:   $('#f_end').value ? new Date($('#f_end').value).toISOString()   : null
     };
-    if (id) await api('speaker.webinar.update','POST',{ id: parseInt(id,10), ...payload });
-    else    await api('speaker.webinar.create','POST', payload);
+    if (id) await api('/speaker.webinar.update','POST',{ id: parseInt(id,10), ...payload });
+    else    await api('/speaker.webinar.create','POST', payload);
     await loadWebinars(); resetForm(); return;
   }
 }

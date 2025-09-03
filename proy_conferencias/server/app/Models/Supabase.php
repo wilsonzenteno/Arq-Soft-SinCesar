@@ -29,6 +29,7 @@ class Supabase {
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
     if (!empty($headers)) curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     if ($body !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, is_string($body) ? $body : json_encode($body));
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     $respBody = curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
@@ -36,6 +37,7 @@ class Supabase {
     return ['status'=>$status, 'body'=>$respBody, 'error'=>$err];
   }
 
+  /* ========= REST =========== */
   public function restSelect(string $table, string $query, bool $useAnon=true): array {
     $endpoint = $this->url . "/rest/v1/" . rawurlencode($table) . ($query ? "?$query" : "");
     $key = $useAnon ? $this->anon : $this->service;
@@ -56,10 +58,16 @@ class Supabase {
     $endpoint = $this->url . "/rest/v1/" . rawurlencode($table) . "?on_conflict=" . rawurlencode($onConflict);
     $key = $useAnon ? $this->anon : $this->service;
     return $this->http('POST', $endpoint, [
-      "apikey: $key","Authorization: Bearer $key",
-      "Content-Type: application/json","Prefer: return=representation,resolution=merge-duplicates"
+      "apikey: $key",
+      "Authorization: Bearer $key",
+      "Content-Type: application/json",
+      "Prefer: return=representation,resolution=merge-duplicates",
+      "Accept-Profile: public",
+      "Content-Profile: public"
     ], $payload);
   }
+
+
   public function restUpdate(string $table, array $payload, string $filter, bool $useAnon=false): array {
     $endpoint = $this->url . "/rest/v1/" . rawurlencode($table) . ($filter ? "?$filter" : "");
     $key = $useAnon ? $this->anon : $this->service;
@@ -77,26 +85,80 @@ class Supabase {
     ]);
   }
 
-  public function storageUpload(string $bucket, string $path, string $content, string $contentType='application/octet-stream'): bool {
-    $endpoint = $this->url . "/storage/v1/object/" . rawurlencode($bucket) . "/" . $path;
+  /* ========= STORAGE =========== */
+  public function storageUpload(string $bucket, string $path, string $content, string $contentType='application/octet-stream', bool $debug=false) {
+    // Codifica cada segmento para soportar espacios y caracteres especiales
+    $normPath = implode('/', array_map('rawurlencode', explode('/', ltrim($path,'/'))));
+    $endpoint = $this->url . "/storage/v1/object/" . rawurlencode($bucket) . "/" . $normPath;
+    $len = strlen($content);
+
     $res = $this->http('POST', $endpoint, [
-      "Authorization: Bearer {$this->service}","apikey: {$this->service}",
-      "Content-Type: $contentType"
+      "Authorization: Bearer {$this->service}",
+      "apikey: {$this->service}",
+      "Content-Type: $contentType",
+      "Content-Length: $len",
+      "x-upsert: true"
     ], $content);
-    return ($res['status'] ?? 500) < 300;
+
+    if ($debug) {
+      return [
+        'ok'      => (($res['status'] ?? 500) < 300),
+        'status'  => $res['status'] ?? 0,
+        'body'    => $res['body'] ?? '',
+        'endpoint'=> $endpoint
+      ];
+    }
+    return (($res['status'] ?? 500) < 300);
   }
+
   public function storageStream(string $bucket, string $path): bool {
-    $endpoint = $this->url . "/storage/v1/object/" . rawurlencode($bucket) . "/" . $path;
+    $normPath = implode('/', array_map('rawurlencode', explode('/', ltrim($path,'/'))));
+    $endpoint = $this->url . "/storage/v1/object/" . rawurlencode($bucket) . "/" . $normPath;
+
     $res = $this->http('GET', $endpoint, [
-      "Authorization: Bearer {$this->service}","apikey: {$this->service}"
+      "Authorization: Bearer {$this->service}",
+      "apikey: {$this->service}"
     ]);
     if (($res['status'] ?? 500) >= 300) return false;
+
     header('Content-Type: application/pdf');
     header('Content-Disposition: inline; filename="'.basename($path).'"');
     echo $res['body'];
     return true;
   }
 
+  public function storageExists(string $bucket, string $path): array {
+    $normPath = implode('/', array_map('rawurlencode', explode('/', ltrim($path,'/'))));
+    $endpoint = $this->url . "/storage/v1/object/" . rawurlencode($bucket) . "/" . $normPath;
+
+    // Intento HEAD
+    $resHead = $this->http('HEAD', $endpoint, [
+      "Authorization: Bearer {$this->service}",
+      "apikey: {$this->service}"
+    ]);
+    if (($resHead['status'] ?? 500) < 300) return ['ok'=>true, 'status'=>$resHead['status']];
+
+    // Fallback: GET con Range mínimo
+    $resGet = $this->http('GET', $endpoint, [
+      "Authorization: Bearer {$this->service}",
+      "apikey: {$this->service}",
+      "Range: bytes=0-0"
+    ]);
+    $ok = (($resGet['status'] ?? 500) < 300);
+    return ['ok'=>$ok, 'status'=>$resGet['status'] ?? 0];
+  }
+
+    public function storageHead(string $bucket, string $path): bool {
+    $normPath = implode('/', array_map('rawurlencode', explode('/', ltrim($path,'/'))));
+    $endpoint = $this->url . "/storage/v1/object/" . rawurlencode($bucket) . "/" . $normPath;
+    $res = $this->http('HEAD', $endpoint, [
+      "Authorization: Bearer {$this->service}",
+      "apikey: {$this->service}"
+    ]);
+    return (($res['status'] ?? 500) < 300);
+  }
+
+  /* ========= PERFIL / AUTH ADMIN =========== */
   public function getUserRole(string $userId): ?string {
     $res = $this->restSelect('profiles', "id=eq.$userId&select=role", false);
     $arr = json_decode($res['body'] ?? "[]", true);

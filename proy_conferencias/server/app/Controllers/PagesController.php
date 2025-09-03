@@ -23,7 +23,7 @@ class PagesController {
 
   public function home(): void     { View::render('pages/home',     ['title'=>'Inicio']); }
   public function speaker(): void  { $this->requireRole(['speaker']);  View::render('pages/speaker',  ['title'=>'Oradores']); }
-  public function attendee(): void { $this->requireRole(['attendee']); View::render('pages/attendee', ['title'=>'Asistentes']); }
+  public function attendee(): void { $this->requireRole(['attendee','speaker']); View::render('pages/attendee', ['title'=>'Asistentes']); }
   public function staff(): void    { $this->requireRole(['staff']);    View::render('pages/staff',    ['title'=>'Staff']); }
 
   /** NUEVAS páginas admin */
@@ -32,9 +32,11 @@ class PagesController {
   public function staffTalks(): void { $this->requireRole(['staff']); View::render('pages/staff/talks',       ['title'=>'Admin • Charlas']); }
   public function staffAnns(): void  { $this->requireRole(['staff']); View::render('pages/staff/announcements',['title'=>'Admin • Anuncios']); }
 
-    /** ====== PÁGINAS PÚBLICAS DE DETALLE ====== */
-  public function publicTalk(): void  { View::render('public/talk',   ['title'=>'Detalle charla']); }
-  public function publicCourse(): void{ View::render('public/course', ['title'=>'Detalle curso']); }
-  public function publicWebinar(): void{View::render('public/webinar',['title'=>'Detalle webinar']); }
+  /** NUEVA: Gestión de usuarios */
+  public function staffUsers(): void { $this->requireRole(['staff']); View::render('pages/staff/users', ['title'=>'Admin • Usuarios']); }
 
+  /** ====== PÁGINAS PÚBLICAS DE DETALLE ====== */
+  public function publicTalk(): void   { View::render('public/talk',   ['title'=>'Detalle charla']); }
+  public function publicCourse(): void { View::render('public/course', ['title'=>'Detalle curso']); }
+  public function publicWebinar(): void{ View::render('public/webinar',['title'=>'Detalle webinar']); }
 }
