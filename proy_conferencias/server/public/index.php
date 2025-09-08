@@ -5,6 +5,8 @@ error_reporting(E_ALL);
 ini_set('display_errors', '1');
 
 $config = require __DIR__ . '/../config.php';
+
+header('Content-Type: text/html; charset=utf-8');
 header('Access-Control-Allow-Origin: ' . ($config['APP_ORIGIN'] ?? '*'));
 header('Access-Control-Allow-Headers: Authorization, Content-Type');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
@@ -154,12 +156,12 @@ $router->get('/slides.exists',          [SlidesController::class, 'exists']);
 $router->post('/speaker.event.slides.upload', [SlidesController::class, 'uploadForEvent']);
 $router->get('/slides.event.download',        [SlidesController::class, 'downloadEvent']);
 
-/** VISTA DETALLE SPEAKER (nuevas, distintas a asistentes) */
+/** VISTA DETALLE SPEAKER */
 $router->get('/speaker/talk',    [PagesController::class, 'speakerTalk']);
 $router->get('/speaker/course',  [PagesController::class, 'speakerCourse']);
 $router->get('/speaker/webinar', [PagesController::class, 'speakerWebinar']);
 
-/** APIs de estadísticas para SPEAKER (las maneja SpeakerController) */
+/** APIs de estadísticas para SPEAKER (SpeakerController) */
 $router->get('/speaker.talk.stats',    [SpeakerController::class, 'talkStats']);
 $router->get('/speaker.course.stats',  [SpeakerController::class, 'courseStats']);
 $router->get('/speaker.webinar.stats', [SpeakerController::class, 'webinarStats']);
@@ -183,6 +185,7 @@ $router->get('/staff.rooms.by_conf',        [StaffController::class, 'roomsByCon
 $router->get('/staff.talks.list',           [StaffController::class, 'listTalks']);
 $router->get('/staff.users.search',         [StaffController::class, 'searchUsersByEmail']);
 
+/** Staff updates/deletes */
 $router->post('/staff.conference.update',   [StaffController::class, 'updateConference']);
 $router->post('/staff.conference.delete',   [StaffController::class, 'deleteConference']);
 $router->post('/staff.room.update',         [StaffController::class, 'updateRoom']);
