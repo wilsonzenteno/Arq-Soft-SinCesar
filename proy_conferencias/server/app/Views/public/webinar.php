@@ -10,6 +10,8 @@
   .link{ text-decoration:underline; }
   .soft{ border:none;border-top:1px solid #1f2937;margin:12px 0; }
   .cnt { display:inline-block; min-width: 1.3em; text-align:center; }
+  .btn[disabled]{ opacity:.6; cursor:not-allowed; }
+  .btnLike--active{ filter:brightness(1.15); }
 </style>
 
 <script>
@@ -23,12 +25,7 @@
   if(!id){ $('#webBox').innerText='ID faltante'; return; }
 
   const fmt = d => d ? new Date(d).toLocaleString() : '—';
-  const diff = (a,b)=>{
-    if(!a||!b) return '—';
-    const ms = Math.max(0, new Date(b)-new Date(a));
-    const m = Math.round(ms/60000); const h = Math.floor(m/60); const mm = m%60;
-    return h ? `${h}h ${mm}m` : `${mm} min`;
-  };
+  const diff = (a,b)=>{ if(!a||!b) return '—'; const ms=Math.max(0, new Date(b)-new Date(a)); const m=Math.round(ms/60000); const h=Math.floor(m/60); const mm=m%60; return h?`${h}h ${mm}m`:`${mm} min`; };
 
   async function getJwt(){
     let jwt = localStorage.getItem('jwt');
@@ -41,28 +38,30 @@
     }
     return jwt;
   }
-  async function api(route, method="GET", body=null){
-    const headers = { 'Content-Type':'application/json' };
+  async function api(route, method="GET", body=null, {timeoutMs=9000}={}){
+    const headers = { };
     const jwt = await getJwt(); if (jwt) headers['Authorization'] = 'Bearer ' + jwt;
-    const res = await fetch(`/index.php?route=${route}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: 'include' });
-    const text = await res.text(); let data = null; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    if (!res.ok) throw new Error((data && data.error) ? data.error : (res.statusText || 'Request failed'));
-    return data;
+    if (body && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
+    const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), timeoutMs);
+    try{
+      const res = await fetch(`/index.php?route=${route}`, {
+        method, headers, body: body ? JSON.stringify(body) : undefined, credentials: 'include', keepalive: true, signal: ctrl.signal
+      });
+      const text = await res.text(); let data = null; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+      if (!res.ok) throw new Error((data && data.error) ? data.error : (res.statusText || 'Request failed'));
+      return data;
+    } finally { clearTimeout(t); }
   }
   async function safe(route, method="GET", body=null){ try { return await api(route,method,body); } catch { return null; } }
 
   function likeButtons(enabled, liked, counts){
     const dis = enabled ? '' : 'disabled title="Regístrate para votar"';
-    const likeActive = liked === true ? 'style="filter:brightness(1.15)"' : '';
-    const dislikeActive = liked === false ? 'style="filter:brightness(1.15)"' : '';
+    const likeCls = liked === true ? 'btnLike--active' : '';
+    const dislikeCls = liked === false ? 'btnLike--active' : '';
     const L = String(counts?.likes ?? 0), D = String(counts?.dislikes ?? 0);
     return `
-      <button class="btn outline btnLike" data-like="1" ${dis} ${likeActive}>
-        👍 <span class="cnt" data-role="likes">${L}</span>
-      </button>
-      <button class="btn outline btnLike" data-like="0" ${dis} ${dislikeActive}>
-        👎 <span class="cnt" data-role="dislikes">${D}</span>
-      </button>
+      <button class="btn outline btnLike ${likeCls}" data-entity="webinar" data-id="${esc(id)}" data-like="1" ${dis}>👍 <span class="cnt" data-role="likes">${L}</span></button>
+      <button class="btn outline btnLike ${dislikeCls}" data-entity="webinar" data-id="${esc(id)}" data-like="0" ${dis}>👎 <span class="cnt" data-role="dislikes">${D}</span></button>
     `;
   }
 
@@ -143,29 +142,7 @@
       catch(e){ alert(e?.message||'No se pudo registrar'); }
     });
 
-    async function refreshCounts(){
-      const st = await safe(`/speaker.webinar.stats&id=${encodeURIComponent(id)}`);
-      const likes = Number(st?.likes ?? 0), dislikes = Number(st?.dislikes ?? 0);
-      const likeSpan = $('#webBox').querySelector('[data-role="likes"]');
-      const disSpan  = $('#webBox').querySelector('[data-role="dislikes"]');
-      if (likeSpan) likeSpan.textContent = String(likes);
-      if (disSpan)  disSpan.textContent  = String(dislikes);
-      $('#webBox').querySelectorAll('.btnLike').forEach(b=> b.style.filter='');
-      const sel = liked === true ? '.btnLike[data-like="1"]' : (liked===false ? '.btnLike[data-like="0"]' : null);
-      if (sel) { const el = $('#webBox').querySelector(sel); if (el) el.style.filter='brightness(1.15)'; }
-    }
-
-    $('#webBox').querySelectorAll('.btnLike').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        if (finished || !reg) { alert('Regístrate para votar.'); return; }
-        const willLike = btn.dataset.like === '1';
-        try{
-          await api('attendee.webinar.vote','POST',{ webinar_id:id, like: willLike });
-          liked = willLike;                // solo 1 voto por usuario
-          await refreshCounts();           // re-cargar del servidor
-        }catch(e){ alert(e?.message||'No se pudo votar'); }
-      });
-    });
+    initOptimisticLikes('#webBox'); // << activar likes optimistas
 
     $('#webBox').querySelector('details').addEventListener('toggle', async (ev)=>{
       if (!ev.target.open) return;
@@ -187,10 +164,7 @@
       try{
         await api('attendee.webinar.eval.save','POST',{
           webinar_id:id,
-          q1:parseInt($('#q1').value,10),
-          q2:parseInt($('#q2').value,10),
-          q3:parseInt($('#q3').value,10),
-          q4:parseInt($('#q4').value,10),
+          q1:+$('#q1').value, q2:+$('#q2').value, q3:+$('#q3').value, q4:+$('#q4').value,
           comments: $('#comments').value.trim()
         });
         alert('¡Gracias! Tu evaluación se guardó.');
@@ -199,6 +173,90 @@
 
   }catch(e){
     $('#webBox').innerText = 'No se pudo cargar: ' + e.message;
+  }
+
+  /* ===== módulo likes optimistas (webinar) ===== */
+  function cooldownKey(entity,id){ return `vote.cooldown.${entity}.${id}`; }
+  function inCooldown(entity,id, ms=3000){
+    const k = cooldownKey(entity,id);
+    const last = +localStorage.getItem(k) || 0;
+    const now = Date.now();
+    const ok = (now - last) < ms;
+    if (!ok) localStorage.setItem(k, String(now));
+    return ok;
+  }
+  function initOptimisticLikes(rootSel){
+    const root = document.querySelector(rootSel);
+    if (!root) return;
+    root.querySelectorAll('.btnLike').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const entity = btn.dataset.entity; // 'webinar'
+        const refId  = btn.dataset.id;
+        const willLike = btn.dataset.like === '1';
+        if (!entity || !refId) return;
+
+        if (btn.hasAttribute('disabled')) { alert('Regístrate para votar.'); return; }
+        if (inCooldown(entity, refId)) return;
+
+        const bLike  = root.querySelector('.btnLike[data-like="1"]');
+        const bDis   = root.querySelector('.btnLike[data-like="0"]');
+        const sLike  = root.querySelector('[data-role="likes"]');
+        const sDis   = root.querySelector('[data-role="dislikes"]');
+
+        const currLiked = bLike.classList.contains('btnLike--active') ? true :
+                          (bDis.classList.contains('btnLike--active') ? false : null);
+        let likes  = parseInt(sLike?.textContent || '0', 10);
+        let dislikes = parseInt(sDis?.textContent || '0', 10);
+
+        if (willLike) {
+          if (currLiked === false) { dislikes = Math.max(0, dislikes-1); likes += 1; }
+          else if (currLiked === null) { likes += 1; }
+          bLike.classList.add('btnLike--active');
+          bDis.classList.remove('btnLike--active');
+        } else {
+          if (currLiked === true) { likes = Math.max(0, likes-1); dislikes += 1; }
+          else if (currLiked === null) { dislikes += 1; }
+          bDis.classList.add('btnLike--active');
+          bLike.classList.remove('btnLike--active');
+        }
+        if (sLike) sLike.textContent = String(likes);
+        if (sDis)  sDis.textContent  = String(dislikes);
+
+        bLike.setAttribute('disabled','disabled');
+        bDis.setAttribute('disabled','disabled');
+
+        try{
+          await api('attendee.webinar.vote','POST',{ webinar_id: refId, like: willLike }, {timeoutMs:4000});
+        }catch(e){
+          // revert
+          if (currLiked === true) { bLike.classList.add('btnLike--active'); bDis.classList.remove('btnLike--active'); }
+          else if (currLiked === false) { bDis.classList.add('btnLike--active'); bLike.classList.remove('btnLike--active'); }
+          else { bLike.classList.remove('btnLike--active'); bDis.classList.remove('btnLike--active'); }
+
+          if (willLike) {
+            if (currLiked === false) { dislikes += 1; likes = Math.max(0, likes-1); }
+            else if (currLiked === null) { likes = Math.max(0, likes-1); }
+          } else {
+            if (currLiked === true) { likes += 1; dislikes = Math.max(0, dislikes-1); }
+            else if (currLiked === null) { dislikes = Math.max(0, dislikes-1); }
+          }
+          if (sLike) sLike.textContent = String(likes);
+          if (sDis)  sDis.textContent  = String(dislikes);
+          alert(e?.message || 'No se pudo votar');
+        } finally {
+          bLike.removeAttribute('disabled');
+          bDis.removeAttribute('disabled');
+          setTimeout(async ()=>{
+            try{
+              const st = await safe(`/speaker.webinar.stats&id=${encodeURIComponent(refId)}`);
+              const L = Number(st?.likes ?? likes), D = Number(st?.dislikes ?? dislikes);
+              if (sLike) sLike.textContent = String(L);
+              if (sDis)  sDis.textContent  = String(D);
+            }catch{}
+          }, 1500);
+        }
+      });
+    });
   }
 })();
 </script>

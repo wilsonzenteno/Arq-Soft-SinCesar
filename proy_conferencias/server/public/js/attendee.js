@@ -38,6 +38,13 @@ async function fetchWithTimeout(url, opts={}, ms=8000){
     return data;
   } finally { clearTimeout(t); }
 }
+async function apiWithTimeout(route, method="GET", body=null, ms=4000){
+  const headers = { 'Content-Type':'application/json; charset=utf-8' };
+  const jwt = await getJwt(); if (jwt) headers['Authorization'] = 'Bearer ' + jwt;
+  return fetchWithTimeout(`/index.php?route=${route}`, {
+    method, headers, body: body ? JSON.stringify(body) : undefined, credentials: 'include'
+  }, ms);
+}
 
 /* ===== Estado global ===== */
 const state = {
@@ -110,14 +117,14 @@ function evalBox(kind, id, enabled){
 }
 function likeButtons(kind, id, registered, liked){
   const dis = registered ? '' : 'disabled title="Regístrate para votar"';
-  const likeActive    = liked === true  ? 'style="filter:brightness(1.15)"' : '';
-  const dislikeActive = liked === false ? 'style="filter:brightness(1.15)"' : '';
+  const likeActive    = liked === true  ? 'btnLike--active' : '';
+  const dislikeActive = liked === false ? 'btnLike--active' : '';
   return `
     <div class="row">
-      <button class="btn outline btnLike" type="button" data-kind="${kind}" data-id="${id}" data-like="1" ${dis} ${likeActive}>
+      <button class="btn outline btnLike ${likeActive}" type="button" data-kind="${kind}" data-id="${id}" data-like="1" ${dis}>
         👍 <span class="cnt" data-role="likes">0</span>
       </button>
-      <button class="btn outline btnLike" type="button" data-kind="${kind}" data-id="${id}" data-like="0" ${dis} ${dislikeActive}>
+      <button class="btn outline btnLike ${dislikeActive}" type="button" data-kind="${kind}" data-id="${id}" data-like="0" ${dis}>
         👎 <span class="cnt" data-role="dislikes">0</span>
       </button>
     </div>
@@ -365,10 +372,11 @@ function renderMyWebinars(){
 
 /* ===== Acciones (likes + evaluación) ===== */
 function highlightChoice(wrap, like){
-  wrap.querySelectorAll('.btnLike').forEach(b=> b.style.filter = '');
+  // usa clase consistente con páginas de detalle
+  wrap.querySelectorAll('.btnLike').forEach(b=> b.classList.remove('btnLike--active'));
   const selector = like ? '.btnLike[data-like="1"]' : '.btnLike[data-like="0"]';
   const chosen = wrap.querySelector(selector);
-  if (chosen) chosen.style.filter = 'brightness(1.15)';
+  if (chosen) chosen.classList.add('btnLike--active');
 }
 function adjustCountsLocally(kind, id, prev, next){
   const counts = getCountsFromState(kind, id);
@@ -383,41 +391,103 @@ function adjustCountsLocally(kind, id, prev, next){
   saveCountsToState(kind, id, updated);
   return updated;
 }
+function voteRoute(kind){ return kind==='talk' ? 'attendee.talk.vote' : kind==='course' ? 'attendee.course.vote' : 'attendee.webinar.vote'; }
+function voteBody(kind, id, like){
+  if (kind==='talk') return { talk_id:id, like };
+  if (kind==='course') return { course_id:id, like };
+  return { webinar_id:id, like };
+}
+function statsRoute(kind, id){
+  if (kind==='talk') return `speaker.talk.stats&id=${encodeURIComponent(id)}`;
+  if (kind==='course') return `speaker.course.stats&id=${encodeURIComponent(id)}`;
+  return `speaker.webinar.stats&id=${encodeURIComponent(id)}`;
+}
+function cooldownKey(kind,id){ return `vote.cooldown.${kind}.${id}`; }
+function inCooldown(kind,id, ms=3000){
+  const k = cooldownKey(kind,id);
+  const last = +localStorage.getItem(k) || 0;
+  const now = Date.now();
+  const isIn = (now - last) < ms;
+  if (!isIn) localStorage.setItem(k, String(now));
+  return isIn;
+}
+
 function bindActions(scopeEl){
   if (!scopeEl) return;
 
+  // ---- Likes con UI optimista + cooldown + refresh diferido
   scopeEl.querySelectorAll('.btnLike').forEach(btn=>{
+    if (btn.__boundVote) return; // evitar doble binding en rerenders parciales
+    btn.__boundVote = true;
+
     btn.addEventListener('click', async ()=>{
       const kind = btn.dataset.kind;
       const id   = parseInt(btn.dataset.id,10);
       const like = btn.dataset.like === '1';
+
+      // bloqueos de UX
+      if (btn.hasAttribute('disabled')) { alert('Regístrate para votar.'); return; }
+      if (inCooldown(kind, id)) return;
+
+      const wrap = btn.closest('.item') || scopeEl;
+
+      // estado previo
+      const prev = (kind==='talk') ? state.myTalkVotes.get(id)
+                 : (kind==='course') ? state.myCourseVotes.get(id)
+                 : state.myWebVotes.get(id);
+
+      // === UI optimista ===
+      const updated = adjustCountsLocally(kind, id, prev ?? null, like);
+      setCounts(wrap, updated.likes, updated.dislikes);
+      highlightChoice(wrap, like);
+
+      // deshabilitar par de botones un instante para evitar doble envío
+      const bLike = wrap.querySelector(`.btnLike[data-kind="${kind}"][data-id="${id}"][data-like="1"]`);
+      const bDis  = wrap.querySelector(`.btnLike[data-kind="${kind}"][data-id="${id}"][data-like="0"]`);
+      bLike?.setAttribute('disabled','disabled');
+      bDis?.setAttribute('disabled','disabled');
+
       try {
-        const prev = (kind==='talk') ? state.myTalkVotes.get(id)
-                   : (kind==='course') ? state.myCourseVotes.get(id)
-                   : state.myWebVotes.get(id);
+        const route = voteRoute(kind);
+        const body  = voteBody(kind, id, like);
+        await apiWithTimeout(route, 'POST', body, 4000);
 
-        if (kind === 'talk') {
-          await api('attendee.talk.vote','POST',{ talk_id:id, like });
-          state.myTalkVotes.set(id, like);
-        } else if (kind === 'course') {
-          await api('attendee.course.vote','POST',{ course_id:id, like });
-          state.myCourseVotes.set(id, like);
-        } else {
-          await api('attendee.webinar.vote','POST',{ webinar_id:id, like });
-          state.myWebVotes.set(id, like);
-        }
-
-        const wrap = btn.closest('.item');
-        const updated = adjustCountsLocally(kind, id, prev, like);
-        setCounts(wrap, updated.likes, updated.dislikes);
-        highlightChoice(wrap, like);
+        // persistimos el nuevo estado local
+        if (kind==='talk')      state.myTalkVotes.set(id, like);
+        else if (kind==='course') state.myCourseVotes.set(id, like);
+        else                      state.myWebVotes.set(id, like);
       } catch(e) {
+        // revertir si falla
+        const reverted = adjustCountsLocally(kind, id, like, prev ?? null);
+        setCounts(wrap, reverted.likes, reverted.dislikes);
+        if (prev === true) highlightChoice(wrap, true);
+        else if (prev === false) highlightChoice(wrap, false);
+        else wrap.querySelectorAll('.btnLike').forEach(b=> b.classList.remove('btnLike--active'));
         alert('No se pudo votar: ' + (e?.message || e));
+      } finally {
+        // re-habilitar de inmediato
+        bLike?.removeAttribute('disabled');
+        bDis?.removeAttribute('disabled');
+
+        // refresh suave desde servidor para cuadrar cifras
+        setTimeout(async ()=>{
+          try {
+            const st = await api(statsRoute(kind, id));
+            const L = Number(st?.likes ?? updated.likes);
+            const D = Number(st?.dislikes ?? updated.dislikes);
+            saveCountsToState(kind, id, {likes:L, dislikes:D});
+            setCounts(wrap, L, D);
+          } catch {}
+        }, 1200);
       }
     });
   });
 
+  // ---- Evaluación
   scopeEl.querySelectorAll('form.evalForm').forEach(form=>{
+    if (form.__boundEval) return;
+    form.__boundEval = true;
+
     form.addEventListener('submit', async (e)=>{
       e.preventDefault();
       const kind = form.dataset.kind; const id = form.dataset.id;
@@ -572,7 +642,6 @@ function setNotifCache(items){
 }
 async function fetchNotifications({incremental=true, limit=50} = {}){
   try{
-    // usa cache inmediatamente si el panel se va a abrir
     const { since, items: cached } = getNotifCache();
     if (!state.notif.items.length && cached.length){
       state.notif.items = cached;
@@ -581,7 +650,6 @@ async function fetchNotifications({incremental=true, limit=50} = {}){
       if (panel && !panel.hidden) renderNotifPanel();
     }
 
-    // construye URL con params (RPC optimizada del backend)
     const jwt = await getJwt();
     const headers = { 'Content-Type':'application/json' };
     if (jwt) headers.Authorization = 'Bearer ' + jwt;
@@ -595,13 +663,11 @@ async function fetchNotifications({incremental=true, limit=50} = {}){
 
     const incoming = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
     if (!incoming.length && cached.length){
-      // nada nuevo; mantén cache
       state.notif.items = cached;
       notifBadgeUpdate();
       return;
     }
 
-    // merge incremental por id
     const map = new Map((cached || []).map(x => [x.id, x]));
     for (const it of incoming) map.set(it.id, it);
     const merged = Array.from(map.values()).sort((a,b)=> new Date(b.created_at) - new Date(a.created_at)).slice(0,200);
@@ -613,7 +679,6 @@ async function fetchNotifications({incremental=true, limit=50} = {}){
     const panel = $('#notifPanel');
     if (panel && !panel.hidden) renderNotifPanel();
   }catch(e){
-    // si falla, no rompas la UI
     console.warn('notifications error:', e);
     state.notif.enabled = false;
     stopNotifPolling();
@@ -622,7 +687,6 @@ async function fetchNotifications({incremental=true, limit=50} = {}){
 function startNotifPolling(){
   if (!state.notif.enabled) return;
   stopNotifPolling();
-  // cada 60s, incremental
   state.notif.pollingTimer = setInterval(()=>fetchNotifications({incremental:true, limit:50}), 60000);
 }
 function stopNotifPolling(){
@@ -641,17 +705,14 @@ function bindNotificationsUI(){
       return;
     }
 
-    // abrir: pinta cache al instante y refresca en background
     const { items: cached } = getNotifCache();
     state.notif.items = cached || [];
     panel.hidden = false;
     renderNotifPanel();
     notifBadgeUpdate();
 
-    // refresco rápido (incremental)
     await fetchNotifications({incremental:true, limit:50});
 
-    // marcar todo como leído al abrir
     state.notif.items.forEach(it => state.notif.readIds.add(String(it.id)));
     saveNotifRead();
     notifBadgeUpdate();
@@ -659,7 +720,6 @@ function bindNotificationsUI(){
 
   $('#notifClose')?.addEventListener('click', ()=> { $('#notifPanel') && ($('#notifPanel').hidden = true); });
 
-  // clic fuera para cerrar
   document.addEventListener('click', (ev)=>{
     const p = $('#notifPanel'); const b = $('#notifBtn');
     if (!p || p.hidden) return;
@@ -667,7 +727,6 @@ function bindNotificationsUI(){
     p.hidden = true;
   });
 
-  // arranca polling silencioso
   startNotifPolling();
 }
 
