@@ -23,6 +23,26 @@ $extra_js = ["/js/attendee.js"];
       <button id="menuToggle" class="btn outline" type="button">☰ Menú</button>
       <h2 id="viewTitle" style="margin:8px 0">Explorar</h2>
     </div>
+<!-- Toolbar asistentes -->
+<div class="att-toolbar">
+  <div class="att-toolbar__left">
+    <input id="globalSearch" type="search" class="input" placeholder="Buscar charlas, cursos o webinars…" autocomplete="off" />
+  </div>
+  <div class="att-toolbar__right">
+    <button id="notifBtn" type="button" class="btn ghost" aria-label="Notificaciones">
+      🔔 <span id="notifBadge" class="badge badge-dot" hidden></span>
+    </button>
+    <div id="notifPanel" class="notif-panel" hidden>
+      <div class="notif-head">
+        <strong>Notificaciones</strong>
+        <button id="notifClose" type="button" class="btn ghost small" aria-label="Cerrar">✕</button>
+      </div>
+      <div id="notifList" class="notif-list">
+        <div class="muted">Cargando…</div>
+      </div>
+    </div>
+  </div>
+</div>
 
     <!-- ======= EXPLORAR ======= -->
     <div id="view-explore" class="view active">
@@ -44,7 +64,7 @@ $extra_js = ["/js/attendee.js"];
         <div id="webinarCards" class="cards"></div>
       </section>
     </div>
-
+    
     <!-- ======= MIS INSCRIPCIONES ======= -->
     <div id="view-mine" class="view">
       <section class="card">

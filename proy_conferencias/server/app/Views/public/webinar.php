@@ -1,6 +1,17 @@
 <section class="card">
   <div id="webBox">Cargando…</div>
 </section>
+
+<style>
+  .pill{ background:#0b1220;border:1px solid #1f2937;border-radius:9999px;padding:4px 10px; }
+  .meta-grid{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:10px;}
+  .meta{ background:#0b1220;border:1px solid #1f2937;border-radius:10px;padding:10px; }
+  .k{ color:#9aa4b2; display:block; }
+  .link{ text-decoration:underline; }
+  .soft{ border:none;border-top:1px solid #1f2937;margin:12px 0; }
+  .cnt { display:inline-block; min-width: 1.3em; text-align:center; }
+</style>
+
 <script>
 (async()=>{
   const $ = s => document.querySelector(s);
@@ -9,9 +20,9 @@
   const p = new URLSearchParams(location.search);
   const id = p.get('id');
 
-  if(!id){ document.getElementById('webBox').innerText='ID faltante'; return; }
+  if(!id){ $('#webBox').innerText='ID faltante'; return; }
 
-  const fmt = (d)=> d ? new Date(d).toLocaleString() : '—';
+  const fmt = d => d ? new Date(d).toLocaleString() : '—';
   const diff = (a,b)=>{
     if(!a||!b) return '—';
     const ms = Math.max(0, new Date(b)-new Date(a));
@@ -19,25 +30,64 @@
     return h ? `${h}h ${mm}m` : `${mm} min`;
   };
 
-  async function safeApi(route, method="GET", body=null){ try { return await api(route,method,body); } catch { return null; } }
+  async function getJwt(){
+    let jwt = localStorage.getItem('jwt');
+    if (jwt) return jwt;
+    if (window.supabase && window.ENV?.SUPABASE_URL && window.ENV?.SUPABASE_ANON) {
+      const supa = window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON);
+      const { data } = await supa.auth.getSession();
+      jwt = data?.session?.access_token || null;
+      if (jwt) localStorage.setItem('jwt', jwt);
+    }
+    return jwt;
+  }
+  async function api(route, method="GET", body=null){
+    const headers = { 'Content-Type':'application/json' };
+    const jwt = await getJwt(); if (jwt) headers['Authorization'] = 'Bearer ' + jwt;
+    const res = await fetch(`/index.php?route=${route}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: 'include' });
+    const text = await res.text(); let data = null; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+    if (!res.ok) throw new Error((data && data.error) ? data.error : (res.statusText || 'Request failed'));
+    return data;
+  }
+  async function safe(route, method="GET", body=null){ try { return await api(route,method,body); } catch { return null; } }
+
+  function likeButtons(enabled, liked, counts){
+    const dis = enabled ? '' : 'disabled title="Regístrate para votar"';
+    const likeActive = liked === true ? 'style="filter:brightness(1.15)"' : '';
+    const dislikeActive = liked === false ? 'style="filter:brightness(1.15)"' : '';
+    const L = String(counts?.likes ?? 0), D = String(counts?.dislikes ?? 0);
+    return `
+      <button class="btn outline btnLike" data-like="1" ${dis} ${likeActive}>
+        👍 <span class="cnt" data-role="likes">${L}</span>
+      </button>
+      <button class="btn outline btnLike" data-like="0" ${dis} ${dislikeActive}>
+        👎 <span class="cnt" data-role="dislikes">${D}</span>
+      </button>
+    `;
+  }
+
+  let w=null, reg=false, liked=null, counts={likes:0,dislikes:0}, finished=false;
 
   try{
     const res = await fetch(`/rest.php?type=webinar&id=${encodeURIComponent(id)}`);
     if(!res.ok) throw new Error('No encontrado');
-    const w = await res.json();
+    w = await res.json();
 
-    const myRegs   = asArray(await safeApi('attendee.webinar.registrations.mine')) || [];
-    const reg = myRegs.some(r => String(r.webinar_id) === String(id));
+    const myRegs   = asArray(await safe('attendee.webinar.registrations.mine')) || [];
+    reg = myRegs.some(r => String(r.webinar_id) === String(id));
 
-    const myVotesArr = asArray(await safeApi('attendee.webinar.votes.mine')) || [];
+    const myVotesArr = asArray(await safe('attendee.webinar.votes.mine')) || [];
     const myVotesMap = new Map(myVotesArr.map(o=>[String(o.webinar_id), !!o.liked]));
-    const liked = myVotesMap.get(String(id));
+    liked = myVotesMap.get(String(id));
 
-    // ¿Ya terminó?
+    const stStats = await safe(`/speaker.webinar.stats&id=${encodeURIComponent(id)}`);
+    counts.likes    = Number(stStats?.likes ?? 0);
+    counts.dislikes = Number(stStats?.dislikes ?? 0);
+
     const endRef = w.ends_at || w.starts_at || null;
-    const finished = endRef ? (new Date(endRef).getTime() < Date.now()) : false;
+    finished = endRef ? (new Date(endRef).getTime() < Date.now()) : false;
 
-    const hero = `
+    $('#webBox').innerHTML = `
       <div class="hero">
         <h2>${esc(w.title||'(sin título)')}</h2>
         <div class="pills">
@@ -56,12 +106,11 @@
         <div class="meta"><span class="k">Duración</span><span class="v">${esc(diff(w.starts_at,w.ends_at))}</span></div>
         ${w.stream_url ? `<div class="meta"><span class="k">Stream</span><span class="v"><a class="link" target="_blank" href="${esc(w.stream_url)}">${esc(w.stream_url)}</a></span></div>`:''}
       </div>
-      <div class="actionbar">
+      <div class="actionbar" style="display:flex;gap:8px;margin-top:10px">
         <button class="btn" id="btnReg" ${finished || reg ? 'disabled' : ''}>
           ${finished ? 'Ya pasó' : (reg ? 'Inscrito' : 'Registrarme')}
         </button>
-        <button class="btn outline btnLike" data-like="1" ${(!reg || finished) ? 'disabled' : ''} ${liked===true?'style="filter:brightness(1.15)"':''}>Me gusta</button>
-        <button class="btn outline btnLike" data-like="0" ${(!reg || finished) ? 'disabled' : ''} ${liked===false?'style="filter:brightness(1.15)"':''}>No me gusta</button>
+        ${likeButtons(reg && !finished, liked, counts)}
         <a class="btn ghost" href="/index.php?route=/attendee">Volver</a>
       </div>
       <hr class="soft" />
@@ -83,20 +132,41 @@
           <label style="flex:1">Comentarios
             <input id="comments" placeholder="¿Algo a mejorar?" />
           </label>
-          <button class="btn" id="btnEvalSave">Guardar</button>
+          <button class="btn" ${(!reg || finished) ? 'disabled' : ''}>Guardar</button>
         </form>
       </details>
     `;
-    $('#webBox').innerHTML = hero;
 
-    // si ya pasó, bloqueo evaluación y botones
-    if (finished){
-      $('#evalForm').querySelectorAll('input,select,button').forEach(el=> el.disabled = true);
-    } else if (!reg){
-      $('#evalForm').querySelectorAll('input,select,button').forEach(el=> el.disabled = true);
+    $('#btnReg')?.addEventListener('click', async ()=>{
+      if (finished) return;
+      try{ await api('attendee.webinar.register','POST',{ webinar_id:id }); alert('¡Inscripción registrada!'); location.reload(); }
+      catch(e){ alert(e?.message||'No se pudo registrar'); }
+    });
+
+    async function refreshCounts(){
+      const st = await safe(`/speaker.webinar.stats&id=${encodeURIComponent(id)}`);
+      const likes = Number(st?.likes ?? 0), dislikes = Number(st?.dislikes ?? 0);
+      const likeSpan = $('#webBox').querySelector('[data-role="likes"]');
+      const disSpan  = $('#webBox').querySelector('[data-role="dislikes"]');
+      if (likeSpan) likeSpan.textContent = String(likes);
+      if (disSpan)  disSpan.textContent  = String(dislikes);
+      $('#webBox').querySelectorAll('.btnLike').forEach(b=> b.style.filter='');
+      const sel = liked === true ? '.btnLike[data-like="1"]' : (liked===false ? '.btnLike[data-like="0"]' : null);
+      if (sel) { const el = $('#webBox').querySelector(sel); if (el) el.style.filter='brightness(1.15)'; }
     }
 
-    // precarga evaluación al abrir
+    $('#webBox').querySelectorAll('.btnLike').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        if (finished || !reg) { alert('Regístrate para votar.'); return; }
+        const willLike = btn.dataset.like === '1';
+        try{
+          await api('attendee.webinar.vote','POST',{ webinar_id:id, like: willLike });
+          liked = willLike;                // solo 1 voto por usuario
+          await refreshCounts();           // re-cargar del servidor
+        }catch(e){ alert(e?.message||'No se pudo votar'); }
+      });
+    });
+
     $('#webBox').querySelector('details').addEventListener('toggle', async (ev)=>{
       if (!ev.target.open) return;
       try{
@@ -111,29 +181,9 @@
       }catch{}
     }, { once:true });
 
-    // acciones
-    $('#btnReg')?.addEventListener('click', async ()=>{
-      if (finished) { alert('Este webinar ya finalizó.'); return; }
-      try{ await api('attendee.webinar.register','POST',{ webinar_id:id }); alert('¡Inscripción registrada!'); location.reload(); }
-      catch(e){ alert(e?.message||'No se pudo registrar'); }
-    });
-
-    $('#webBox').querySelectorAll('.btnLike').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        if (finished) { alert('Este webinar ya finalizó.'); return; }
-        const like = btn.dataset.like === '1';
-        try{
-          await api('attendee.webinar.vote','POST',{ webinar_id:id, like });
-          $('#webBox').querySelectorAll('.btnLike').forEach(b=> b.style.filter='');
-          btn.style.filter='brightness(1.15)';
-        }catch(e){ alert(e?.message||'No se pudo votar'); }
-      });
-    });
-
     $('#evalForm')?.addEventListener('submit', async (e)=>{
       e.preventDefault();
-      if (finished) { alert('Este webinar ya finalizó.'); return; }
-      if (!reg) { alert('Regístrate para poder evaluar.'); return; }
+      if (finished || !reg) { alert('Regístrate para evaluar.'); return; }
       try{
         await api('attendee.webinar.eval.save','POST',{
           webinar_id:id,

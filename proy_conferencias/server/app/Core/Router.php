@@ -20,7 +20,7 @@ class Router {
     $n = $this->norm($path);
     // match exacto
     if (isset($this->routes[$method][$n])) return $this->routes[$method][$n];
-    // intenta variantes comunes (con/sin slash inicial por si llega “route=foo.bar”)
+    // intenta variantes comunes (con/sin slash inicial por si llega “route=foo.bar”
     $alts = [];
     if ($n !== '/' && $n[0] === '/') $alts[] = substr($n,1);
     if (!str_starts_with($n, '/')) $alts[] = '/'.$n;
