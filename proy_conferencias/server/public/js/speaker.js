@@ -1,3 +1,5 @@
+// speaker.js — versión corregida (error "An invalid form control ... is not focusable")
+
 const $ = s => document.querySelector(s);
 const esc = s => String(s??'').replace(/[&<>"'`=\/]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'}[c]));
 const toLocal = dt => { if(!dt) return ''; const d=new Date(dt); if(Number.isNaN(+d)) return ''; const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
@@ -9,10 +11,10 @@ const showEl    = (el, v) => { if (!el) return; el.style.display = v ? '' : 'non
 const enableField = (el, v) => { if (!el) return; if (v) el.removeAttribute('disabled'); else el.setAttribute('disabled','disabled'); };
 const requireField = (el, v) => { if (!el) return; if (v) el.setAttribute('required','required'); else el.removeAttribute('required'); };
 const clearField = (el) => { if (!el) return; if (el.tagName === 'SELECT') el.value = ''; else el.value = ''; };
+
 function setBlockEnabled(block, enabled){
   if (!block) return;
   block.querySelectorAll('input,select,textarea').forEach(el=>{
-    // Al ocultar el bloque: disabled y quitar required
     if (!enabled) {
       el.setAttribute('disabled','disabled');
       el.removeAttribute('required');
@@ -22,6 +24,30 @@ function setBlockEnabled(block, enabled){
     }
   });
 }
+
+// Detecta visibilidad efectiva (no display:none, no visibility:hidden)
+function isVisible(el){
+  if (!el) return false;
+  if (el.disabled) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden') return false;
+  // offsetParent = null cuando está en display:none (salvo position:fixed)
+  if (el.offsetParent === null && style.position !== 'fixed') return false;
+  return true;
+}
+
+// Quita "required" de campos que no sean visibles; devuelve lista para restaurar si quisieras
+function stripHiddenRequired(form){
+  const removed = [];
+  form.querySelectorAll('[required]').forEach(el=>{
+    if (!isVisible(el) || el.disabled) {
+      el.removeAttribute('required');
+      removed.push(el);
+    }
+  });
+  return removed;
+}
+
 function showLabel(inputEl, v){
   if (!inputEl) return;
   const wrap = inputEl.closest('label') || inputEl;
@@ -311,7 +337,6 @@ async function loadCourses(){
         if ($('#f_stream')) $('#f_stream').value= it.dataset.stream || '';
         if ($('#f_room_select') && it.dataset.room) $('#f_room_select').value = String(it.dataset.room);
 
-        // certificado
         if ($('#f_cert')) $('#f_cert').value = (it.dataset.cert === '1' ? 'si' : 'no');
         if ($('#f_cert_url')) $('#f_cert_url').value = it.dataset.certurl || '';
         toggleBlocks(); if ($('#btnCancel')) $('#btnCancel').style.display='inline-block';
@@ -430,23 +455,19 @@ function toggleBlocks(){
     if (mod === 'virtual') { clearField(fVenueTalk); }
     if (mod === 'presencial') { clearField(fStreamTalk); }
   } else {
-    // Si no es talk, asegúrate de que el bloque talk quede sin validar
     showBlock(blkStreamTalk, false);
-    showBlock(blkRoom,       false); // lo reactivamos más abajo si aplica
+    showBlock(blkRoom,       false);
   }
 
   // ---------- COURSE / WEBINAR ----------
   if (type === 'course' || type === 'webinar') {
     const mod = (fMod?.value || (type==='webinar'?'virtual':'presencial')).toLowerCase();
 
-    // Sala visible solo si NO es virtual
     showBlock(blkRoom, (mod !== 'virtual'));
 
-    // Alternamos campos dentro del bloque de stream
-    showLabel(fVenue,  (mod !== 'virtual'));                     // venue: presencial/híbrida
-    showLabel(fStream, (mod === 'virtual' || mod === 'hibrida'));// stream: virtual/híbrida
+    showLabel(fVenue,  (mod !== 'virtual'));
+    showLabel(fStream, (mod === 'virtual' || mod === 'hibrida'));
 
-    // requeridos
     requireField(fVenue,  (mod === 'presencial' || mod === 'hibrida'));
     requireField(fStream, (mod === 'virtual' || mod === 'hibrida'));
 
@@ -462,11 +483,8 @@ function toggleBlocks(){
     requireField(fCertUrl, enabled);
     if (!enabled) clearField(fCertUrl);
   } else {
-    // Si no es curso, deshabilitar todo el bloque
     showBlock(blkCertCourse, false);
   }
-
-  // conference: ya quedó deshabilitado lo que no use
 }
 
 function resetForm(){
@@ -504,12 +522,19 @@ async function uploadPdf(talkId, file){
 /* ================= Submit unificado ================= */
 async function submitUnified(e){
   e.preventDefault();
+
+  // --- Validación manual: desactivar required de ocultos y validar visibles
+  const form = $('#uniForm');
+  toggleBlocks();                 // asegurar estados (required/disabled/show)
+  stripHiddenRequired(form);      // quitar required de todo lo no visible
+  if (form && !form.checkValidity()){
+    form.reportValidity();
+    return;
+  }
+
   const itemTypeEl = $('#item_type'); if (!itemTypeEl) return;
   const idEl = $('#item_id'); const id = idEl ? idEl.value : '';
   const type = itemTypeEl.value;
-
-  // Seguridad extra: antes de validar, re-evaluamos visibilidad/disabled
-  toggleBlocks();
 
   const add1hIfMissing = (isoStart, isoEnd) => {
     if (isoEnd) return isoEnd;
@@ -556,7 +581,6 @@ async function submitUnified(e){
     const confId = selVal ? parseInt(selVal,10) : null;
 
     const mod = ($('#f_mod_talk')?.value || 'presencial').toLowerCase();
-    // Para modalidad virtual, no mandamos room_id
     const roomId = (mod==='virtual') ? null : getRoomId();
 
     const payload = {
@@ -597,8 +621,6 @@ async function submitUnified(e){
       room_id: (mod==='virtual') ? null : getRoomId(),
       starts_at: $('#f_start')?.value ? new Date($('#f_start').value).toISOString() : null,
       ends_at:   $('#f_end')?.value ? new Date($('#f_end').value).toISOString()   : null,
-
-      // NUEVOS CAMPOS
       cert_enabled: certEnabled,
       cert_form_url: certUrl
     };
@@ -638,6 +660,10 @@ function bindUI(){
 }
 async function boot(){
   bindUI();
+  // Desactiva validación nativa para evitar el "not focusable" y validar nosotros
+  const form = $('#uniForm');
+  if (form) form.setAttribute('novalidate','novalidate');
+
   toggleBlocks();           // asegura disabled/required correcto al cargar
   await loadRoomsAll();
   await loadConferences();

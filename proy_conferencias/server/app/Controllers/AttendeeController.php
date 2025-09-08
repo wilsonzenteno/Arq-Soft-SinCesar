@@ -49,7 +49,7 @@ class AttendeeController {
     $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
     if ($id <= 0) { Http::json(['error'=>'id inválido'], 400); return; }
 
-    // Selecciona solo columnas que EXISTEN (sin description)
+    // Solo columnas que existen
     $qTalk = "id=eq.$id&select=" . rawurlencode(
       "id,title,starts_at,ends_at,conference_id,room_id,modality,venue,stream_url"
     );
@@ -58,24 +58,39 @@ class AttendeeController {
     if (!$talk) { Http::json(['error'=>'Charla no encontrada'], 404); return; }
 
     // Sala (opcional)
+    $room = null;
     $roomName = null;
+    $roomCapacity = null;
     if (!empty($talk['room_id'])) {
       $rid = (int)$talk['room_id'];
       $qRoom = "id=eq.$rid&select=" . rawurlencode("id,name,number,capacity");
       $rRoom = $this->sb->restSelect('rooms', $qRoom, true);
       $room  = ($this->decodeOrFail($rRoom)[0] ?? null);
-      if ($room) $roomName = trim(($room['name'] ?? '') . ' ' . ($room['number'] ?? ''));
+      if ($room) {
+        $roomName = trim(($room['name'] ?? '') . ' ' . ($room['number'] ?? ''));
+        $roomCapacity = isset($room['capacity']) ? (is_null($room['capacity']) ? null : (int)$room['capacity']) : null;
+      }
     }
 
-    // Conferencia (para ciudad/ubicación)
+    // Conferencia (para ciudad)
     $confCity = null;
     if (!empty($talk['conference_id'])) {
       $cid  = (int)$talk['conference_id'];
-      $qConf= "id=eq.$cid&select=" . rawurlencode("id,city,name,location");
+      $qConf= "id=eq.$cid&select=" . rawurlencode("id,city,name");
       $rConf= $this->sb->restSelect('conferences', $qConf, true);
       $conf = ($this->decodeOrFail($rConf)[0] ?? null);
-      $confCity = $conf['city'] ?? ($conf['location'] ?? null);
+      $confCity = $conf['city'] ?? null;
     }
+
+    // Ocupación: contamos registros de la charla
+    $taken = 0;
+    $rRegs = $this->sb->restSelect('talk_registrations', "talk_id=eq.$id&select=talk_id", false);
+    $arrRegs = $this->decodeOrFail($rRegs);
+    if (is_array($arrRegs)) $taken = count($arrRegs);
+
+    $capacity = $roomCapacity; // null = sin límite
+    $seatsLeft = is_null($capacity) ? null : max(0, $capacity - $taken);
+    $isFull = is_null($capacity) ? false : ($taken >= $capacity);
 
     $out = [
       'id'             => $talk['id'],
@@ -85,6 +100,10 @@ class AttendeeController {
       'conference_id'  => $talk['conference_id'] ?? null,
       'room_id'        => $talk['room_id'] ?? null,
       'room_name'      => $roomName,
+      'room_capacity'  => $capacity,
+      'seats_taken'    => $taken,
+      'seats_left'     => $seatsLeft,
+      'is_full'        => $isFull,
       'modality'       => $talk['modality'] ?? null,       // 'presencial' | 'virtual' | 'hibrida'
       'venue'          => $talk['venue'] ?? null,          // lugar físico si aplica
       'stream_url'     => $talk['stream_url'] ?? null,     // URL si aplica
@@ -179,7 +198,7 @@ class AttendeeController {
     $arr = $this->decodeOrFail($res);
     $out = array_map(function($c){
       $title = $c['title'] ?? $c['name'] ?? '(sin título)';
-      $location = $c['location'] ?? $c['city'] ?? null;
+      $location = $c['city'] ?? null;
       $date     = $c['date']      ?? null;
       $starts   = $c['starts_at'] ?? ($c['start_time'] ?? null);
       $ends     = $c['ends_at']   ?? ($c['end_time']   ?? null);
@@ -394,10 +413,45 @@ class AttendeeController {
     $p = Http::jsonInput();
     $tid = $p['talk_id'] ?? '';
     if ($tid==='') { Http::json(['error'=>'talk_id inválido'], 400); return; }
+
+    // Obtenemos sala y modalidad de la charla
+    $qTalk = "id=eq.$tid&select=" . rawurlencode("id,room_id,modality");
+    $rTalk = $this->sb->restSelect('talks', $qTalk, false);
+    $tArr  = $this->decodeOrFail($rTalk);
+    $t0    = $tArr[0] ?? null;
+    if (!$t0) { Http::json(['error'=>'Charla no encontrada'], 404); return; }
+
+    $modality = strtolower((string)($t0['modality'] ?? 'presencial'));
+    $roomId   = $t0['room_id'] ?? null;
+
+    // Si hay sala y capacidad (y no es virtual), validamos aforo
+    if ($roomId && $modality !== 'virtual') {
+      $qRoom = "id=eq.$roomId&select=" . rawurlencode("id,capacity");
+      $rRoom = $this->sb->restSelect('rooms', $qRoom, false);
+      $room  = $this->decodeOrFail($rRoom)[0] ?? null;
+
+      $capacity = isset($room['capacity']) ? (is_null($room['capacity']) ? null : (int)$room['capacity']) : null;
+
+      if (!is_null($capacity)) {
+        $rRegs = $this->sb->restSelect('talk_registrations', "talk_id=eq.$tid&select=talk_id", false);
+        $arrRegs = $this->decodeOrFail($rRegs);
+        $taken = is_array($arrRegs) ? count($arrRegs) : 0;
+
+        if ($taken >= $capacity) {
+          Http::json(['error'=>'Sala llena','code'=>'ROOM_FULL'], 409);
+          return;
+        }
+      }
+    }
+
+    // Inserción idempotente (ON CONFLICT DO NOTHING)
     $res = $this->sb->restUpsert('talk_registrations', [
       'talk_id'=>$tid, 'attendee_id'=>$uid
     ], 'talk_id,attendee_id', false);
-    (($res['status'] ?? 500) < 300) ? Http::json(['ok'=>true]) : Http::json(['error'=>'No se pudo registrar'], 400);
+
+    (($res['status'] ?? 500) < 300)
+      ? Http::json(['ok'=>true])
+      : Http::json(['error'=>'No se pudo registrar'], 400);
   }
 
   public function myTalkRegistrations(): void {
